@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Responsive Image Gallery • Lightbox + Filters </title>
+  <style>
+    :root{
+      --bg: #0e0f12;
+      --card: #151821;
+      --muted: #8a94a7;
+      --text: #eef1f6;
+      --accent: #6aa5ff;
+      --accent-2: #b38bff;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+      --radius: 18px;
+      --radius-sm: 12px;
+      --speed: 240ms;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body{
+      margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      background: linear-gradient(180deg, #0e0f12 0%, #12141a 100%);
+      color: var(--text);
+    }
+
+    header{
+      position: sticky; top: 0; z-index: 5;
+      background: linear-gradient(180deg, rgba(14,15,18,.9), rgba(14,15,18,.6));
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid rgba(255,255,255,.06);
+    }
+
+    .container{ max-width: 1200px; margin: 0 auto; padding: 18px 18px; }
+
+    h1{ font-size: clamp(22px, 3vw, 32px); margin: 0 0 8px; letter-spacing:.3px; }
+    .sub{ color: var(--muted); font-size: 14px; }
+
+    .toolbar{ display: grid; gap: 10px; grid-template-columns: 1fr; margin-top: 14px; }
+    @media (min-width: 720px){
+      .toolbar{ grid-template-columns: auto 1fr auto; align-items: center; }
+    }
+
+    .btns, .effects{ display: flex; flex-wrap: wrap; gap: 8px; }
+
+    button, .chip{
+      appearance: none; border: 1px solid rgba(255,255,255,.08);
+      background: linear-gradient(180deg, #1a1e28, #131722);
+      color: var(--text); padding: 10px 14px; border-radius: var(--radius-sm);
+      font-weight: 600; font-size: 13px; letter-spacing:.2px; cursor: pointer;
+      transition: transform var(--speed) ease, background var(--speed), border var(--speed), box-shadow var(--speed), opacity var(--speed);
+      box-shadow: var(--shadow);
+    }
+    button:hover, .chip:hover{ transform: translateY(-2px); }
+    .chip[aria-pressed="true"], button.active{
+      border-color: rgba(255,255,255,.22);
+      background: linear-gradient(180deg, #24304a, #1a2133);
+      box-shadow: 0 8px 20px rgba(106,165,255,.25);
+    }
+
+    .search{ display:flex; align-items:center; gap:8px; }
+    .search input{
+      width: 100%; background: #0f1219; color: var(--text);
+      border: 1px solid rgba(255,255,255,.08); border-radius: var(--radius-sm);
+      padding: 10px 12px; outline: none; transition: border var(--speed);
+    }
+    .search input:focus{ border-color: rgba(255,255,255,.22); }
+
+  
+    .gallery{
+      --min: 220px;
+      display: grid; gap: 14px; padding: 18px; max-width: 1200px; margin: 10px auto 60px;
+      grid-template-columns: repeat(auto-fit, minmax(var(--min), 1fr));
+    }
+    @media (max-width:480px){ .gallery{ --min: 150px; gap: 10px; padding: 12px; } }
+
+    .item{
+      position: relative; border-radius: var(--radius); overflow: hidden; isolation: isolate;
+      background: var(--card); border: 1px solid rgba(255,255,255,.06);
+      transform: translateZ(0);
+      transition: transform var(--speed) ease, box-shadow var(--speed) ease, opacity var(--speed) ease;
+    }
+    .item img{ width: 100%; height: 100%; display: block; object-fit: cover; aspect-ratio: 4/3; filter: var(--fx, none); }
+
+    .item .overlay{
+      position: absolute; inset: 0; display: grid; place-items: end; padding: 12px;
+      background: linear-gradient(0deg, rgba(0,0,0,.55) 10%, rgba(0,0,0,0) 60%);
+      color: #fff; opacity: 0; transition: opacity var(--speed) ease;
+    }
+    .item:hover{ transform: translateY(-4px) scale(1.01); box-shadow: 0 20px 40px rgba(0,0,0,.35); }
+    .item:hover .overlay{ opacity: 1; }
+
+    .label{ background: rgba(255,255,255,.12); padding: 6px 10px; border-radius: 999px; font-size: 12px; backdrop-filter: blur(4px); }
+
+    .is-hidden{ opacity: 0; transform: scale(.96); pointer-events: none; }
+
+    .lightbox{
+      position: fixed; inset: 0; display: none; place-items: center; background: rgba(3,5,10,.78);
+      backdrop-filter: blur(6px); z-index: 50; animation: fadeIn var(--speed) ease forwards;
+    }
+    .lightbox.open{ display: grid; }
+    @keyframes fadeIn{ from { opacity: 0 } to { opacity: 1 } }
+
+    .lb-inner{
+      position: relative; width: min(92vw, 1100px); max-height: 86vh; display: grid; gap: 12px;
+      grid-template-rows: 1fr auto; border-radius: var(--radius); overflow: hidden; background: #0c0f15; border: 1px solid rgba(255,255,255,.1);
+      box-shadow: 0 30px 80px rgba(0,0,0,.55);
+    }
+
+    .lb-img-wrap{ position: relative; background: #0a0c12; }
+    .lb-img{ width: 100%; height: 100%; object-fit: contain; display: block; }
+
+    .lb-caption{ display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; color: var(--muted); }
+
+    .lb-close, .lb-prev, .lb-next{
+      position: absolute; top: 10px; width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center;
+      background: rgba(17,20,28,.7); border: 1px solid rgba(255,255,255,.14); color: #fff;
+    }
+    .lb-close{ right: 10px; }
+    .lb-prev{ left: 10px; top: 50%; transform: translateY(-50%); }
+    .lb-next{ right: 10px; top: 50%; transform: translateY(-50%); }
+    .lb-prev:hover, .lb-next:hover, .lb-close:hover{ background: rgba(17,20,28,.92); }
+
+   
+    .fx-grayscale .item img{ --fx: grayscale(100%); }
+    .fx-sepia .item img{ --fx: sepia(100%); }
+    .fx-contrast .item img{ --fx: contrast(120%) saturate(110%); }
+
+    footer{ color: var(--muted); text-align: center; padding: 30px 0 50px; }
+    a{ color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>Image Gallery</h1>
+      <div class="sub">Responsive grid • Lightbox view • Next/Prev navigation • Hover effects • Filters</div>
+
+      <div class="toolbar" role="region" aria-label="Gallery controls">
+        <div class="btns" aria-label="Category filters">
+          <button class="chip active" data-filter="all" aria-pressed="true">All</button>
+          <button class="chip" data-filter="nature" aria-pressed="false">Nature</button>
+          <button class="chip" data-filter="city" aria-pressed="false">City</button>
+          <button class="chip" data-filter="people" aria-pressed="false">People</button>
+          <button class="chip" data-filter="abstract" aria-pressed="false">Abstract</button>
+        </div>
+        <div class="search">
+          <input id="search" type="search" placeholder="Search caption… (e.g., forest, skyline)" aria-label="Search caption" />
+        </div>
+        <div class="effects" aria-label="Image effects">
+          <button class="chip fx" data-fx="none">No Effect</button>
+          <button class="chip fx" data-fx="grayscale">Grayscale</button>
+          <button class="chip fx" data-fx="sepia">Sepia</button>
+          <button class="chip fx" data-fx="contrast">High Contrast</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="gallery" id="gallery" aria-label="Image gallery">
+      <!-- Sample images from picsum.photos; replace with your own -->
+      
+      <figure class="item" data-category="nature" data-caption="Misty forest in the early morning">
+        <img src="https://picsum.photos/id/1056/800/600" alt="Misty forest" loading="lazy" />
+        <figcaption class="overlay"><span class="label">Cloudy sky</span></figcaption>
+      </figure>
+
+      <figure class="item" data-category="city" data-caption="City skyline at blue hour">
+        <img src="https://picsum.photos/id/1011/800/600" alt="City skyline" loading="lazy" />
+        <figcaption class="overlay"><span class="label">Boating</span></figcaption>
+      </figure>
+
+      <figure class="item" data-category="people" data-caption="Portrait of a traveler with a backpack">
+        <img src="https://picsum.photos/id/1005/800/600" alt="Traveler portrait" loading="lazy" />
+        <figcaption class="overlay"><span class="label">Traveler</span></figcaption>
+      </figure>
+
+      <figure class="item" data-category="abstract" data-caption="Colorful geometric patterns and shapes">
+        <img src="https://picsum.photos/id/1025/800/600" alt="Abstract pattern" loading="lazy" />
+        <figcaption class="overlay"><span class="label">Pug</span></figcaption>
+      </figure>
+
+      <figure class="item" data-category="nature" data-caption="Sunset over rolling hills">
+        <img src="https://picsum.photos/id/1018/800/600" alt="Sunset hills" loading="lazy" />
+        <figcaption class="overlay"><span class="label">Serene</span></figcaption>
+      </figure>
+
+      <figure class="item" data-category="city" data-caption="Vintage tram crossing old town">
+        <img src="https://picsum.photos/id/1031/800/600" alt="Vintage tram" loading="lazy" />
+        <figcaption class="overlay"><span class="label">Skyscrapper</span></figcaption>
+      </figure>
+
+      <figure class="item" data-category="people" data-caption="Friends laughing at a café">
+        <img src="https://picsum.photos/id/1027/800/600" alt="Friends at cafe" loading="lazy" />
+        <figcaption class="overlay"><span class="label">solo</span></figcaption>
+      </figure>
+
+      <figure class="item" data-category="abstract" data-caption="Neon lights bokeh">
+        <img src="https://picsum.photos/id/1019/800/600" alt="Neon bokeh" loading="lazy" />
+        <figcaption class="overlay"><span class="label">Thunderstorm</span></figcaption>
+      </figure>
+
+      <figure class="item" data-category="nature" data-caption="Waterfall hidden in the rainforest">
+        <img src="https://picsum.photos/id/1043/800/600" alt="Waterfall" loading="lazy" />
+        <figcaption class="overlay"><span class="label">Mountains</span></figcaption>
+      </figure>
+
+      <figure class="item" data-category="city" data-caption="Night street with reflections after rain">
+        <img src="https://picsum.photos/id/1035/800/600" alt="Night street" loading="lazy" />
+        <figcaption class="overlay"><span class="label">Waterfall</span></figcaption>
+      </figure>
+
+      <figure class="item" data-category="people" data-caption="Silhouette of dancer on stage lights">
+        <img src="https://picsum.photos/id/1003/800/600" alt="Dancer silhouette" loading="lazy" />
+        <figcaption class="overlay"><span class="label">Dear</span></figcaption>
+      </figure>
+
+      <figure class="item" data-category="abstract" data-caption="Soft gradients and smooth curves">
+        <img src="https://picsum.photos/id/100/800/600" alt="Soft gradient" loading="lazy" />
+        <figcaption class="overlay"><span class="label">Smoke</span></figcaption>
+      </figure>
+    </section>
+  </main>
+
+  <!-- Lightbox -->
+  <div class="lightbox" id="lightbox" aria-modal="true" role="dialog" aria-label="Image viewer" hidden>
+    <div class="lb-inner">
+      <div class="lb-img-wrap">
+        <img class="lb-img" id="lb-img" alt="" />
+        <button class="lb-prev" id="lb-prev" aria-label="Previous image" title="Previous">&#10094;</button>
+        <button class="lb-next" id="lb-next" aria-label="Next image" title="Next">&#10095;</button>
+        <button class="lb-close" id="lb-close" aria-label="Close" title="Close">&#10005;</button>
+      </div>
+      <div class="lb-caption" id="lb-caption">
+        <span id="lb-text">&nbsp;</span>
+        <span id="lb-count">1 / 1</span>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    
+  </footer>
+
+  <script>
+    
+    const gallery = document.getElementById('gallery');
+    const items = Array.from(gallery.querySelectorAll('.item'));
+
+    const chips = document.querySelectorAll('.btns .chip');
+    const searchInput = document.getElementById('search');
+
+    const fxButtons = document.querySelectorAll('.effects .fx');
+    const root = document.documentElement; // to toggle effect classes on <html>
+
+    
+    const lb = document.getElementById('lightbox');
+    const lbImg = document.getElementById('lb-img');
+    const lbText = document.getElementById('lb-text');
+    const lbCount = document.getElementById('lb-count');
+    const btnPrev = document.getElementById('lb-prev');
+    const btnNext = document.getElementById('lb-next');
+    const btnClose = document.getElementById('lb-close');
+
+    let currentIndex = 0; // index in "visible" list
+
+    // ====== Filtering ======
+    function applyFilters(){
+      const activeChip = document.querySelector('.btns .chip.active');
+      const filter = activeChip?.dataset.filter || 'all';
+      const q = searchInput.value.trim().toLowerCase();
+
+      items.forEach((el) => {
+        const cat = el.dataset.category;
+        const cap = (el.dataset.caption || '').toLowerCase();
+        const passCat = (filter === 'all') || (cat === filter);
+        const passSearch = !q || cap.includes(q);
+        const show = passCat && passSearch;
+        el.classList.toggle('is-hidden', !show);
+      });
+    }
+
+    chips.forEach(chip => {
+      chip.addEventListener('click', () => {
+        chips.forEach(c => { c.classList.remove('active'); c.setAttribute('aria-pressed', 'false'); });
+        chip.classList.add('active');
+        chip.setAttribute('aria-pressed', 'true');
+        applyFilters();
+      });
+    });
+    searchInput.addEventListener('input', applyFilters);
+
+    // ====== Effects ======
+    function clearFxClasses(){
+      root.classList.remove('fx-grayscale','fx-sepia','fx-contrast');
+      fxButtons.forEach(b => b.classList.remove('active'));
+    }
+    fxButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        clearFxClasses();
+        const fx = btn.dataset.fx;
+        if(fx !== 'none') root.classList.add('fx-' + fx);
+        btn.classList.add('active');
+      });
+    });
+
+    // ====== Lightbox ======
+    function visibleItems(){
+      return items.filter(el => !el.classList.contains('is-hidden'));
+    }
+
+    function openLightbox(index){
+      const list = visibleItems();
+      if(list.length === 0) return;
+      currentIndex = Math.max(0, Math.min(index, list.length - 1));
+      const el = list[currentIndex];
+      const img = el.querySelector('img');
+      lbImg.src = img.currentSrc || img.src; // respect responsive src if any
+      lbImg.alt = img.alt || '';
+      lbText.textContent = el.dataset.caption || img.alt || '';
+      lbCount.textContent = `${currentIndex + 1} / ${list.length}`;
+      lb.classList.add('open');
+      lb.removeAttribute('hidden');
+      document.body.style.overflow = 'hidden'; // prevent background scroll
+      // focus close for accessibility
+      btnClose.focus();
+    }
+
+    function closeLightbox(){
+      lb.classList.remove('open');
+      lb.setAttribute('hidden','');
+      document.body.style.overflow = '';
+    }
+
+    function next(){ openLightbox(currentIndex + 1); }
+    function prev(){ openLightbox(currentIndex - 1); }
+
+    // Click on an item to open
+    items.forEach((el, i) => {
+      el.addEventListener('click', () => {
+        // currentIndex should be based on visible set
+        const vis = visibleItems();
+        const indexInVis = vis.indexOf(el);
+        openLightbox(indexInVis >= 0 ? indexInVis : i);
+      });
+    });
+
+    // Controls
+    btnNext.addEventListener('click', () => {
+      const list = visibleItems();
+      if(!list.length) return;
+      currentIndex = (currentIndex + 1) % list.length; // wrap
+      openLightbox(currentIndex);
+    });
+    btnPrev.addEventListener('click', () => {
+      const list = visibleItems();
+      if(!list.length) return;
+      currentIndex = (currentIndex - 1 + list.length) % list.length;
+      openLightbox(currentIndex);
+    });
+    btnClose.addEventListener('click', closeLightbox);
+
+    // Close by clicking outside image
+    lb.addEventListener('click', (e) => { if(e.target === lb) closeLightbox(); });
+
+    // Keyboard support
+    window.addEventListener('keydown', (e) => {
+      if(!lb.classList.contains('open')) return;
+      if(e.key === 'Escape') closeLightbox();
+      if(e.key === 'ArrowRight') btnNext.click();
+      if(e.key === 'ArrowLeft') btnPrev.click();
+    });
+
+    // Basic swipe (mobile)
+    let touchStartX = 0;
+    lb.addEventListener('touchstart', (e) => { touchStartX = e.changedTouches[0].screenX; }, {passive:true});
+    lb.addEventListener('touchend', (e) => {
+      const dx = e.changedTouches[0].screenX - touchStartX;
+      if(Math.abs(dx) > 40){
+        if(dx < 0) btnNext.click(); else btnPrev.click();
+      }
+    }, {passive:true});
+
+    // Initialize
+    clearFxClasses();
+    document.querySelector('.effects .fx[data-fx="none"]').classList.add('active');
+    applyFilters();
+  </script>
+</body>
+</html>
